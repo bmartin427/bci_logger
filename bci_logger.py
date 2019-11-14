@@ -32,11 +32,12 @@ class OpenBCIWifi:
         self._do_post('command', json={'command': cmd})
 
     def start_stream(self, ip, port, latency_us):
-        self._do_post('tcp', json={
+        self._do_post('udp', json={
             'ip': ip,
             'port': port,
             'output': 'raw',
-            'latency': latency_us})
+            'latency': latency_us,
+            'burst': False})
         self._do_get('stream/start')
 
     def stop_stream(self):
@@ -75,44 +76,36 @@ class Logger:
 
     def __init__(self, filename):
         self._file = open(filename, 'wb')
-        self._socket = socket.socket()
+        self._socket = socket.socket(type=socket.SOCK_DGRAM)
         self._socket.bind(('', 0))
-        self._socket.listen()
-        self._conn = None
         self._data = bytes()
-        self._time_fmt = struct.Struct('>d')
+        self._time_fmt = struct.Struct('>L')
         self._last_sample = None
         self._spinner_idx = 0
         self._spinner_time = None
+        self._spinner_samples = 0
+
+        self._socket.setsockopt(
+            socket.SOL_SOCKET, socket.SO_RCVBUF, 1024 * 1024)
 
     def get_port(self):
         return self._socket.getsockname()[1]
 
     def close(self):
-        if self._conn is not None:
-            self._conn.close()
         self._socket.close()
         self._file.close()
 
     def rlist(self):
-        if self._conn is not None:
-            return [self._conn]
         return [self._socket]
 
     def handle_event(self, obj, now):
-        if obj == self._socket:
-            self._conn, addr = self._socket.accept()
-            print('Got stream connection from %s:%d' % addr)
-            self._conn.setsockopt(
-                socket.SOL_SOCKET, socket.SO_RCVBUF, 1024 * 1024)
-            return
-        if (self._conn is None) or (obj != self._conn):
+        if obj != self._socket:
             print('Unrecognized wait object!')
             return
 
-        self._data += self._conn.recv(4096)
+        self._data += self._socket.recv(4096)
 
-        any_data = False
+        samples = 0
         while len(self._data) >= self._PAIR_LEN:
             if ((self._data[0] != self._START_BYTE) or
                 (self._data[self._PKT_LEN] != self._START_BYTE)):
@@ -139,17 +132,29 @@ class Logger:
                     lost = self._data[1] - expected_sample
                     if lost < 0:
                         lost += 256
-                    print('Dropped %d samples' % lost)
+                    samples += lost
+                    f, _ = math.modf(now)
+                    print('%s.%06d: Dropped %d samples (%d -> %d)' %
+                          (time.strftime('%H:%M:%S', time.gmtime(now)),
+                           int(1e6 * f), lost,
+                           self._last_sample, self._data[1]))
             self._last_sample = self._data[1]
 
-            self._file.write(self._time_fmt.pack(now) + self._data)
+            self._file.write(self._time_fmt.pack(int(now * 1e6) & 0xFFFFFFFF) +
+                             self._data[:self._PAIR_LEN])
             self._data = self._data[self._PAIR_LEN:]
-            any_data = True
+            samples += 1
 
-        if any_data and ((self._spinner_time is None) or
-                         (now >= self._spinner_time + 0.2)):
-            print('Logging... %s\r' % self._spinner(), end='')
+        self._spinner_samples += samples
+        if samples and ((self._spinner_time is None) or
+                        (now >= self._spinner_time + 0.2)):
+            dt = (now - self._spinner_time) \
+                 if self._spinner_time is not None else 1.
+            print('Logging... %s (%.0f Hz)     \r' %
+                  (self._spinner(), self._spinner_samples / dt),
+                  end='')
             self._spinner_time = now
+            self._spinner_samples = 0
 
     def _discard_junk(self):
         idx = self._data[1:].find(self._START_BYTE)
@@ -175,7 +180,7 @@ def main():
     args = parser.parse_args()
 
     iface = OpenBCIWifi(args.ip)
-    iface.send_command('~0')
+    iface.send_command('~3')  # 2 kHz; in practice faster rates don't work
     iface.send_command('/4')
     iface.send_command('<')
 
@@ -185,16 +190,11 @@ def main():
     print('Listening on %s:%d' % (local_ip, port))
     iface.start_stream(local_ip, port, args.latency_us)
     try:
-        f, last_sec = math.modf(time.time())
-        last_sec = int(last_sec)
         while True:
-            rlist, _, _ = select.select(logger.rlist(), [], [], 1. - f)
+            rlist, _, _ = select.select(logger.rlist(), [], [], 5.)
+            if not rlist:
+                raise RuntimeError('Data timeout!')
             now = time.time()
-            f, sec = math.modf(now)
-            sec = int(sec)
-            if sec != last_sec:
-                #iface.send_command('`' + chr(sec & 0xFF))
-                last_sec = sec
             for obj in rlist:
                 logger.handle_event(obj, now)
 
