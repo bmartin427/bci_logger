@@ -73,7 +73,7 @@ class Logger:
     _SPINNER = '|/-\\'
 
     def __init__(self, filename):
-        self._file = open(filename, 'wb')
+        self._file = open(filename, 'xb')
         self._socket = socket.socket(type=socket.SOCK_DGRAM)
         self._socket.bind(('', 0))
         self._data = bytes()
