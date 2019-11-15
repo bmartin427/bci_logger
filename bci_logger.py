@@ -12,6 +12,8 @@ import socket
 import struct
 import time
 
+from bci_data import BciData
+
 
 def get_local_ip(remote_ip):
     sock = socket.socket(type=socket.SOCK_DGRAM)
@@ -69,10 +71,6 @@ class OpenBCIWifi:
 
 class Logger:
     _SPINNER = '|/-\\'
-    _START_BYTE = 0xA0
-    _STOP_BYTES = [0xC5, 0xC6]
-    _PKT_LEN = 33
-    _PAIR_LEN = 2 * _PKT_LEN
 
     def __init__(self, filename):
         self._file = open(filename, 'wb')
@@ -106,23 +104,8 @@ class Logger:
         self._data += self._socket.recv(4096)
 
         samples = 0
-        while len(self._data) >= self._PAIR_LEN:
-            if ((self._data[0] != self._START_BYTE) or
-                (self._data[self._PKT_LEN] != self._START_BYTE)):
-                print('Invalid start bytes (0x%02X, 0x%02X)' %
-                      (self._data[0], self._data[self._PKT_LEN]))
-                self._discard_junk()
-                continue
-            if ((self._data[self._PKT_LEN - 1] not in self._STOP_BYTES) or
-                (self._data[self._PAIR_LEN - 1] not in self._STOP_BYTES)):
-                print('Invalid stop bytes (0x%02X, 0x%02X)' %
-                      (self._data[self._PKT_LEN - 1],
-                       self._data[self._PAIR_LEN - 1]))
-                self._discard_junk()
-                continue
-            if self._data[1] != self._data[self._PKT_LEN + 1]:
-                print('Sample number mismatch! (%d != %d)' %
-                      (self._data[1], self._data[self._PKT_LEN + 1]))
+        while len(self._data) >= BciData.PAIR_LEN:
+            if not BciData.validate(self._data):
                 self._discard_junk()
                 continue
 
@@ -134,15 +117,15 @@ class Logger:
                         lost += 256
                     samples += lost
                     f, _ = math.modf(now)
-                    print('%s.%06d: Dropped %d samples (%d -> %d)' %
+                    print('%s.%03d: Dropped %d samples (%d -> %d)' %
                           (time.strftime('%H:%M:%S', time.gmtime(now)),
-                           int(1e6 * f), lost,
+                           int(1e3 * f), lost,
                            self._last_sample, self._data[1]))
             self._last_sample = self._data[1]
 
-            self._file.write(self._time_fmt.pack(int(now * 1e6) & 0xFFFFFFFF) +
-                             self._data[:self._PAIR_LEN])
-            self._data = self._data[self._PAIR_LEN:]
+            self._file.write(self._time_fmt.pack(int(now * 1e3) & 0xFFFFFFFF) +
+                             self._data[:BciData.PAIR_LEN])
+            self._data = self._data[BciData.PAIR_LEN:]
             samples += 1
 
         self._spinner_samples += samples
@@ -157,7 +140,7 @@ class Logger:
             self._spinner_samples = 0
 
     def _discard_junk(self):
-        idx = self._data[1:].find(self._START_BYTE)
+        idx = self._data[1:].find(BciData.START_BYTE)
         if idx < 0:
             self._data = bytes()
         else:
