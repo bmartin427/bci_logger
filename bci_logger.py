@@ -166,6 +166,8 @@ def main():
     iface.send_command('~3')  # 2 kHz; in practice faster rates don't work
     iface.send_command('/4')
     iface.send_command('<')
+    for ch in '12345678QWERTYUI':
+        iface.send_command('x%s060110X' % ch)
 
     logger = Logger(args.output)
     local_ip = get_local_ip(args.ip)
