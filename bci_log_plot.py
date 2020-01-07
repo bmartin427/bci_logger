@@ -22,13 +22,13 @@ def main():
     print('Loaded %r' % sys.argv[1])
 
     plt.figure()
-    for i in range(2, p.shape[1]):
-        print('Filtering channel %d' % (i - 1))
+    for i in range(1, p.shape[1]):
+        print('Filtering channel %d' % i)
         hp = p[:, i] - np.convolve(
             p[:, i], np.ones(AVG_LEN) / AVG_LEN, mode='same')
-        plt.plot(1e-3 * p[AVG_LEN // 2:-AVG_LEN // 2, 1],
+        plt.plot(1e-3 * p[AVG_LEN // 2:-AVG_LEN // 2, 0],
                  hp[AVG_LEN // 2:-AVG_LEN // 2],
-                 color=COLORS[(i - 2) % len(COLORS)],
+                 color=COLORS[(i - 1) % len(COLORS)],
                  linewidth=0.5)
     plt.xlabel('s')
     plt.show()

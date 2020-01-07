@@ -17,7 +17,9 @@ def main():
 
     with open(args.input, 'rb') as f:
         d = f.read()
-    numpy.savetxt(args.output, BciLogData.to_numpy(d), delimiter=',', fmt='%d')
+    np_d = BciLogData.to_numpy(d)
+    numpy.savetxt(args.output, np_d, delimiter=',',
+                  fmt=(['%.3f'] + ['%d'] * (np_d.shape[1] - 1)))
 
 
 if __name__ == '__main__':
