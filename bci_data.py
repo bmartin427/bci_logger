@@ -1,4 +1,4 @@
-# Copyright 2019 Brad Martin.  All rights reserved.
+# Copyright 2019-2020 Brad Martin.  All rights reserved.
 
 import numpy
 import scipy.stats
@@ -23,14 +23,14 @@ class BciData:
         if len(data) < BciData.PAIR_LEN:
             return False
 
-        if ((data[0] != BciData.START_BYTE) or
-            (data[BciData.PKT_LEN] != BciData.START_BYTE)):
+        if (data[0] != BciData.START_BYTE) or \
+           (data[BciData.PKT_LEN] != BciData.START_BYTE):
             print('Invalid start bytes (0x%02X, 0x%02X)' %
                   (data[0], data[BciData.PKT_LEN]))
             return False
 
-        if ((data[BciData.PKT_LEN - 1] not in BciData.STOP_BYTES) or
-            (data[BciData.PAIR_LEN - 1] not in BciData.STOP_BYTES)):
+        if (data[BciData.PKT_LEN - 1] not in BciData.STOP_BYTES) or \
+           (data[BciData.PAIR_LEN - 1] not in BciData.STOP_BYTES):
             print('Invalid stop bytes (0x%02X, 0x%02X)' %
                   (data[BciData.PKT_LEN - 1],
                    data[BciData.PAIR_LEN - 1]))
@@ -49,9 +49,23 @@ class BciLogData:
     TIMESTAMP_SIZE = 4
     RECORD_LEN = TIMESTAMP_SIZE + BciData.PAIR_LEN
 
-
     @staticmethod
-    def to_numpy(data):
+    def to_numpy(data, separated=False):
+        """Parses binary log data into numpy format.
+
+        Given the binary contents of a log file, parses the file data, and
+        returns an (N, 17) numpy array, where N is the number of records in
+        the input file, the first column is the system timestamp in seconds
+        corresponding to a sample, and the remaining 16 columns are the
+        channel readings for that sample.
+
+        If `separated` is True, then the result is instead a python list of
+        such numpy arrays.  Any non-sequential samples (due to packet loss
+        etc) will trigger a break into a new array.  If `separated` is False,
+        then such losses will be hidden within the one result array, with the
+        available data directly concatenated.
+
+        """
         dt = numpy.dtype([
             ('sys_timestamp_ms', '>u4'),
             ('packet', [
@@ -165,5 +179,29 @@ class BciLogData:
         channel_data = (ch_in['h8'] * 65536 + ch_in['l16']).reshape(
             (ch_in.shape[0], ch_in.shape[1] * ch_in.shape[2]))
 
-        return numpy.concatenate((numpy.expand_dims(fixed_sys_ms, axis=1),
-                                  channel_data), axis=1)
+        combined = numpy.concatenate(
+            (numpy.expand_dims(fixed_sys_ms * 1e-3, axis=1),
+             channel_data),
+            axis=1)
+        if not separated:
+            return combined
+
+        region_idxs = BciLogData._get_contiguous_regions(fixed_s_no)
+        start_idx = 0
+        result = []
+        for idx in region_idxs:
+            result.append(combined[start_idx:idx, :])
+            start_idx = idx
+        result.append(combined[start_idx:, :])
+        return result
+
+    @staticmethod
+    def _get_contiguous_regions(fixed_sample_nos):
+        """Finds regions of contiguous sample data in a log.
+
+        Given an array of unwrapped sample numbers found in a log, returns an
+        array representing the indexes into the input array where sample
+        number discontinuities are found.
+        """
+        steps = fixed_sample_nos[1:] - fixed_sample_nos[:-1]
+        return 1 + numpy.nonzero(steps != 1)[0]

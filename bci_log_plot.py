@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2019 Brad Martin.  All rights reserved.
+# Copyright 2019-2020 Brad Martin.  All rights reserved.
 
 import sys
 
@@ -26,7 +26,7 @@ def main():
         print('Filtering channel %d' % i)
         hp = p[:, i] - np.convolve(
             p[:, i], np.ones(AVG_LEN) / AVG_LEN, mode='same')
-        plt.plot(1e-3 * p[AVG_LEN // 2:-AVG_LEN // 2, 0],
+        plt.plot(p[AVG_LEN // 2:-AVG_LEN // 2, 0],
                  hp[AVG_LEN // 2:-AVG_LEN // 2],
                  color=COLORS[(i - 1) % len(COLORS)],
                  linewidth=0.5)

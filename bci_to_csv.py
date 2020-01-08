@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-# Copyright 2019 Brad Martin.  All rights reserved.
+# Copyright 2019-2020 Brad Martin.  All rights reserved.
 
 import argparse
 
 import numpy
 
 from bci_data import BciLogData
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -19,7 +20,7 @@ def main():
         d = f.read()
     np_d = BciLogData.to_numpy(d)
     numpy.savetxt(args.output, np_d, delimiter=',',
-                  fmt=(['%.3f'] + ['%d'] * (np_d.shape[1] - 1)))
+                  fmt=(['%.6f'] + ['%d'] * (np_d.shape[1] - 1)))
 
 
 if __name__ == '__main__':
